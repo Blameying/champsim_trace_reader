@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use pyo3::prelude::*;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::process::{Command, Stdio};
@@ -282,31 +283,75 @@ struct InputInstr {
 }
 
 #[derive(Debug)]
+#[pyclass]
 pub struct TraceInfo {
-    ip: u64,
-    is_branch: u8,
-    branch_taken: u8,
-    destination_registers: [u8; NUM_INSTR_DESTINATIONS],
-    source_registers: [u8; NUM_INSTR_SOURCES],
-    destination_memory: [u64; NUM_INSTR_DESTINATIONS],
-    source_memory: [u64; NUM_INSTR_SOURCES],
+    pub ip: u64,
+    pub is_branch: u8,
+    pub branch_taken: u8,
+    pub destination_registers: [u8; NUM_INSTR_DESTINATIONS],
+    pub source_registers: [u8; NUM_INSTR_SOURCES],
+    pub destination_memory: [u64; NUM_INSTR_DESTINATIONS],
+    pub source_memory: [u64; NUM_INSTR_SOURCES],
 }
 
+#[pymethods]
+impl TraceInfo {
+    #[getter]
+    pub fn ip(&self) -> PyResult<u64> {
+        Ok(self.ip)
+    }
+
+    #[getter]
+    pub fn is_branch(&self) -> PyResult<u8> {
+        Ok(self.is_branch)
+    }
+
+    #[getter]
+    pub fn branch_taken(&self) -> PyResult<u8> {
+        Ok(self.branch_taken)
+    }
+
+    #[getter]
+    pub fn destination_registers(&self) -> PyResult<[u8; NUM_INSTR_DESTINATIONS]> {
+        Ok(self.destination_registers)
+    }
+
+    #[getter]
+    pub fn source_registers(&self) -> PyResult<[u8; NUM_INSTR_SOURCES]> {
+        Ok(self.source_registers)
+    }
+
+    #[getter]
+    pub fn destination_memory(&self) -> PyResult<[u64; NUM_INSTR_DESTINATIONS]> {
+        Ok(self.destination_memory)
+    }
+
+    #[getter]
+    pub fn source_memory(&self) -> PyResult<[u64; NUM_INSTR_SOURCES]> {
+        Ok(self.source_memory)
+    }
+}
+
+#[pyclass]
 pub struct TraceReader {
     handle: BufReader<Box<dyn Read>>,
 }
 
+unsafe impl Send for TraceReader {}
+
+#[pymethods]
 impl TraceReader {
-    pub fn new(file_path: &str) -> std::io::Result<Self> {
+    #[new]
+    pub fn new(file_path: &str) -> PyResult<Self> {
         let file = open_trace_file(file_path, false)?;
         Ok(TraceReader { handle: file })
     }
 
-    pub fn read(&mut self) -> TraceInfo {
+    pub fn read(&mut self) -> PyResult<TraceInfo> {
         let mut buf = [0u8; std::mem::size_of::<InputInstr>()];
-        self.handle.read_exact(&mut buf).unwrap();
+        self.handle.read_exact(&mut buf)?;
         let trace: InputInstr = unsafe { std::ptr::read(buf.as_ptr() as *const _) };
-        TraceInfo {
+        Ok(TraceInfo {
             ip: trace.ip,
             is_branch: trace.is_branch,
             branch_taken: trace.branch_taken,
@@ -314,8 +359,15 @@ impl TraceReader {
             source_registers: trace.source_registers,
             destination_memory: trace.destination_memory,
             source_memory: trace.source_memory,
-        }
+        })
     }
+}
+
+#[pymodule]
+fn champsim_trace_reader(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<TraceInfo>()?;
+    m.add_class::<TraceReader>()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -326,10 +378,10 @@ mod tests {
     fn it_works() {
         let reader = TraceReader::new("/home/blame/workspace/CRC2_trace/astar_23B.trace.xz");
         if let Ok(mut reader) = reader {
-            let trace = reader.read();
+            let trace = reader.read().unwrap();
             println!("{:?}", trace);
             assert_ne!(trace.ip, 0);
-            let trace = reader.read();
+            let trace = reader.read().unwrap();
             println!("{:?}", trace);
             assert_ne!(trace.ip, 0);
         }
